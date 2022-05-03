@@ -3,15 +3,15 @@
 #include "usbd_cdc_if.h"
 #include "string.h"
 
-
+//#include "FreeRTOS.h"
+//#include "task.h"
+//#include "semphr.h"
+//#include "stdio.h"
 
 uint8_t userRxData[64];
 char txData[64];
 
 int user_main(void){
-
-
-
 
   while(1){
 
