@@ -32,7 +32,8 @@
 
 /* USER CODE BEGIN PV */
 /* Private variables ---------------------------------------------------------*/
-extern uint8_t userRxData[64];
+uint8_t controlDataBuff[7];
+
 /* USER CODE END PV */
 
 /** @addtogroup STM32_USB_OTG_DEVICE_LIBRARY
@@ -90,7 +91,7 @@ extern uint8_t userRxData[64];
 /* It's up to user to redefine and/or remove those define */
 /** Received data over USB are stored in this buffer      */
 uint8_t UserRxBufferFS[APP_RX_DATA_SIZE];
-
+uint8_t UserRxBufferFSPage;
 /** Data to send over USB CDC are stored in this buffer   */
 uint8_t UserTxBufferFS[APP_TX_DATA_SIZE];
 
@@ -156,6 +157,9 @@ static int8_t CDC_Init_FS(void)
   /* Set Application Buffers */
   USBD_CDC_SetTxBuffer(&hUsbDeviceFS, UserTxBufferFS, 0);
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
+
+  UserRxBufferFSPage = 0;
+
   return (USBD_OK);
   /* USER CODE END 3 */
 }
@@ -221,11 +225,11 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
   /* 6      | bDataBits  |   1   | Number Data bits (5, 6, 7, 8 or 16).          */
   /*******************************************************************************/
     case CDC_SET_LINE_CODING:
-
+      memcpy(controlDataBuff, pbuf, 7);
     break;
 
     case CDC_GET_LINE_CODING:
-
+      memcpy(pbuf, controlDataBuff, 7);
     break;
 
     case CDC_SET_CONTROL_LINE_STATE:
@@ -262,9 +266,19 @@ static int8_t CDC_Control_FS(uint8_t cmd, uint8_t* pbuf, uint16_t length)
 static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 {
   /* USER CODE BEGIN 6 */
-  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
+//  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &Buf[0]);
+//  USBD_CDC_ReceivePacket(&hUsbDeviceFS);
+
+  UserRxBufferFSPage += *Len;
+  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &UserRxBufferFS[UserRxBufferFSPage]);
+
+  if(*Len < 64 || Buf[*Len - 1] == 10) {
+    UserRxBufferFSPage = 0;
+    USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
+  }
+
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
-  memcpy(userRxData, Buf, (uint8_t) *Len);
+
   return (USBD_OK);
   /* USER CODE END 6 */
 }
