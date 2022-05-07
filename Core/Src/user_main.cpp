@@ -4,6 +4,7 @@
 #include <string>
 #include <queue>
 #include <list>
+#include <sstream>
 
 #include "usb_device.h"
 #include "usbd_cdc_if.h"
@@ -16,6 +17,8 @@
 #define HASH '#'
 #define ASTERISK '*'
 #define AMPERSAND '&'
+#define MAX_WORKER_TASKS 7
+#define TASK_PRIORITY 1
 
 using namespace std;
 
@@ -23,11 +26,11 @@ using namespace std;
 void mainTask(void *);
 void workerTask(void *);
 
-void processInput(std::string) ;
-uint8_t sendOverUsb(std::string);
-void addTask();
-void pushPendingQueue(std::string) ;
-std::string popFrontPendingQueue();
+void processInput(string) ;
+uint8_t sendOverUsb(string);
+void addWorkerTask();
+void pushPendingQueue(string) ;
+string popFrontPendingQueue();
 void showPendingQueue();
 void showSolvedQueue();
 void clearSolvedQueue();
@@ -45,6 +48,9 @@ SemaphoreHandle_t solvedQueueMutex;
 list<string> solvedQueue;
 list<string> pendingQueue;
 
+TaskHandle_t taskArray[MAX_WORKER_TASKS];
+uint8_t taskArrayIndex = 0;
+
 
 int user_main(void){
 
@@ -53,17 +59,18 @@ int user_main(void){
 
   pendingQueueMutex = xSemaphoreCreateMutexStatic(&pendingQueueMutexBuffer);
   solvedQueueMutex = xSemaphoreCreateMutexStatic(&solvedQueueMutexBuffer);
-  configASSERT(pendingQueueMutex);
-  configASSERT(pendingQueueMutex);
+
 
   xTaskCreate(
       mainTask,
       "mainTask",
       configMINIMAL_STACK_SIZE,
       ( void * ) NULL,
-      configMAX_PRIORITIES - 1,
+      TASK_PRIORITY,
       NULL
   );
+
+  addWorkerTask();
 
   vTaskStartScheduler();
   // MUST NOT reach this while
@@ -81,11 +88,12 @@ void mainTask(void * arg) {
     string input = inputBuffer;
     if(!input.empty()) {
 
-      string response = "Message size: " + std::to_string(input.length()) + "\n";
+      string response = "Message received " +
+          std::to_string(input.length()) + " Bytes\n";
       sendOverUsb(response);
 
       processInput(input);
-      sendOverUsb("message processed\n\n");
+      sendOverUsb("Message processed\n\n");
 
       input.clear();
       memset(inputBuffer, '\0', APP_RX_DATA_SIZE);
@@ -98,12 +106,26 @@ void mainTask(void * arg) {
 void workerTask(void * arg) {
   while(1) {
 
-//    showPendingQueue();
-    TaskStatus_t xTaskDetails;
-    vTaskGetInfo( NULL, &xTaskDetails, pdTRUE, eInvalid );
-//    sendOverUsb("TaskId: " + std::to_string(xTaskDetails.xTaskNumber) + "\n");
-    printf("TaskId: %d\n", (int) xTaskDetails.xTaskNumber);
-    vTaskDelay(pdMS_TO_TICKS(1000));
+    string pendingProblem = popFrontPendingQueue();
+    if(!pendingProblem.empty()){
+      uint32_t iniTick = (uint32_t) xTaskGetTickCount();
+
+      stringstream ss(pendingProblem);
+      string token;
+      while(ss >> token) {
+        printf((token + "\n").c_str());
+      }
+
+      uint32_t endTick = (uint32_t) xTaskGetTickCount();
+
+      int durationMs = pdTICKS_TO_MS(endTick - iniTick);
+      printf("Duration: %d ms \n\n", durationMs);
+    }
+
+//    TaskStatus_t xTaskDetails;
+//    vTaskGetInfo( NULL, &xTaskDetails, pdTRUE, eInvalid );
+//    printf("TaskId: %d\n", (int) xTaskDetails.xTaskNumber);
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
@@ -129,7 +151,7 @@ void processInput(string input) {
         } else if (payload == "pop") { // TODO just for test
           sendOverUsb("Element: " + popFrontPendingQueue() + "\n");
         } else if (payload == "addtask") {
-          addTask();
+          addWorkerTask();
         } else {// it is a thread update
           sendOverUsb("T: " + payload + "\n");
         }
@@ -158,61 +180,67 @@ uint8_t sendOverUsb(string msg) {
   return 0;
 }
 
-void addTask() {
-  xTaskCreate(
-    workerTask,
-    "worker",
-    configMINIMAL_STACK_SIZE,
-    ( void * ) NULL,
-    0,
-    NULL
-  );
-//  sendOverUsb("T: " + payload + "\n");
+void addWorkerTask() {
+
+  uint8_t numberOfWorkerTasks = uxTaskGetNumberOfTasks() - 1;
+//  if(numberOfWorkerTasks < MAX_WORKER_TASKS) {
+    string taskName = "worker" + std::to_string(numberOfWorkerTasks);
+    xTaskCreate(
+      workerTask,
+      taskName.c_str(),
+      configMINIMAL_STACK_SIZE,
+      ( void * ) NULL,
+      TASK_PRIORITY,
+      NULL
+    );
+    printf("%s created\n", taskName.c_str());
+//  } else {
+//    printf("Cannot create worker No: %d\n", numberOfWorkerTasks);
+//  }
+
+
 }
 
 void pushPendingQueue(string problem) {
 
 #ifdef USE_MUTEX
   if(xSemaphoreTake(pendingQueueMutex, ( TickType_t ) 1 ) == pdTRUE) {
-#endif
     pendingQueue.push_back(problem);
-#ifdef USE_MUTEX
     xSemaphoreGive(pendingQueueMutex);
   }
+#else
+  pendingQueue.push_back(problem);
 #endif
 }
 
-std::string popFrontPendingQueue() {
+string popFrontPendingQueue() {
   string element;
-
 #ifdef USE_MUTEX
   if(xSemaphoreTake(pendingQueueMutex, ( TickType_t ) 1 ) == pdTRUE) {
-#endif
-
     element = pendingQueue.front();
     pendingQueue.pop_front();
-#ifdef USE_MUTEX
     xSemaphoreGive(pendingQueueMutex);
   }
+#else
+  element = pendingQueue.front();
+  pendingQueue.pop_front();
 #endif
   return element;
 }
 
 void showPendingQueue() {
-
 #ifdef USE_MUTEX
   if(xSemaphoreTake(pendingQueueMutex, ( TickType_t ) 1 ) == pdTRUE) {
-#endif
-//    list<string>::iterator it;
-//    for (it = pendingQueue.begin(); it != pendingQueue.end(); ++it) {
-//      string element = ((string) *it) + "\n";
-//      sendOverUsb(element);
-//    }
     for(string element: pendingQueue) {
       sendOverUsb(element + "\n");
     }
-#ifdef USE_MUTEX
     xSemaphoreGive(pendingQueueMutex);
+  }
+#else
+  list<string>::iterator it;
+  for (it = pendingQueue.begin(); it != pendingQueue.end(); ++it) {
+    string element = ((string) *it) + "\n";
+    sendOverUsb(element);
   }
 #endif
 }
@@ -226,7 +254,15 @@ void showSolvedQueue() {
 }
 
 void clearSolvedQueue(){
+#ifdef USE_MUTEX
+  if(xSemaphoreTake(solvedQueueMutex, ( TickType_t ) 1 ) == pdTRUE) {
+    solvedQueue.clear();
+    xSemaphoreGive(pendingQueueMutex);
+  }
+#else
   solvedQueue.clear();
+#endif
+
 }
 
 
