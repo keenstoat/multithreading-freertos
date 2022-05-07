@@ -164,7 +164,7 @@ void addTask() {
     "worker",
     configMINIMAL_STACK_SIZE,
     ( void * ) NULL,
-    10,
+    0,
     NULL
   );
 //  sendOverUsb("T: " + payload + "\n");
