@@ -1,11 +1,12 @@
+//#include <MyQueue.h>
 #include "user_main.h"
 #include "main.h"
+#include "stm32f4xx_it.h"
 
 #include <string>
 #include <queue>
 #include <list>
 #include <sstream>
-
 #include "usb_device.h"
 #include "usbd_cdc_if.h"
 
@@ -22,18 +23,21 @@
 
 using namespace std;
 
-
-void mainTask(void *);
+void serveUsbISRTask(void *);
+void bossTask(void *);
 void workerTask(void *);
+void toggleLed(uint16_t);
 
 void processInput(string) ;
 uint8_t sendOverUsb(string);
-void addWorkerTask();
+void addWorkerTask(uint8_t);
 void pushPendingQueue(string) ;
 string popFrontPendingQueue();
 void showPendingQueue();
 void showSolvedQueue();
 void clearSolvedQueue();
+
+extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
 
 extern USBD_HandleTypeDef hUsbDeviceFS;
 static char inputBuffer[APP_RX_DATA_SIZE] = {0};
@@ -47,38 +51,77 @@ SemaphoreHandle_t solvedQueueMutex;
 
 list<string> solvedQueue;
 list<string> pendingQueue;
+//Queue myPendingQ;
 
-TaskHandle_t taskArray[MAX_WORKER_TASKS];
-uint8_t taskArrayIndex = 0;
 
+//TaskHandle_t taskArray[MAX_WORKER_TASKS];
+//uint8_t taskArrayIndex = 0;
+uint16_t ledArray[4];
+StaticSemaphore_t gpioDMutexBuffer;
+SemaphoreHandle_t gpioDMutex;
+
+//StaticTask_t mainTaskBuff;
+//StackType_t mainTaskStack[ configMINIMAL_STACK_SIZE ];
+
+StaticTask_t xTaskBufferArray[4];
+StackType_t xStackArray[4][ configMINIMAL_STACK_SIZE ];
+
+TaskHandle_t serveUsbISRTaskHandle;
 
 int user_main(void){
 
   MX_USB_DEVICE_Init();
 
-
   pendingQueueMutex = xSemaphoreCreateMutexStatic(&pendingQueueMutexBuffer);
   solvedQueueMutex = xSemaphoreCreateMutexStatic(&solvedQueueMutexBuffer);
+  gpioDMutex = xSemaphoreCreateMutexStatic(&gpioDMutexBuffer);
 
+//  xTaskCreate(
+//    serveUsbISRTask,
+//    "serveUsbISRTask",
+//    configMINIMAL_STACK_SIZE,
+//    ( void * ) NULL,
+//    TASK_PRIORITY,
+//    &serveUsbISRTaskHandle
+//   );
 
   xTaskCreate(
-      mainTask,
-      "mainTask",
+      bossTask,
+      "bossTask",
       configMINIMAL_STACK_SIZE,
       ( void * ) NULL,
       TASK_PRIORITY,
-      NULL
+      &serveUsbISRTaskHandle
   );
 
-  addWorkerTask();
+//  ledArray[0] = LED_GREEN_Pin;
+//  addWorkerTask(0);
+//
+//  ledArray[1] = LED_ORANGE_Pin;
+//  addWorkerTask(1);
+//
+//  ledArray[2] = LED_RED_Pin;
+//  addWorkerTask(2);
+//
+//  ledArray[3] = LED_BLUE_Pin;
+//  addWorkerTask(3);
 
   vTaskStartScheduler();
   // MUST NOT reach this while
   while(1);
 }
 
+void serveUsbISRTask(void * arg) {
 
-void mainTask(void * arg) {
+//  vTaskSuspend(NULL);
+  while(1) {
+//    HAL_PCD_IRQHandler(&hpcd_USB_OTG_FS);
+    printf("Serving USB ISR...");
+    vTaskSuspend(NULL);
+  }
+}
+
+void bossTask(void * arg) {
 
   while(1) {
 
@@ -92,7 +135,7 @@ void mainTask(void * arg) {
           std::to_string(input.length()) + " Bytes\n";
       sendOverUsb(response);
 
-      processInput(input);
+//      processInput(input);
       sendOverUsb("Message processed\n\n");
 
       input.clear();
@@ -106,27 +149,41 @@ void mainTask(void * arg) {
 void workerTask(void * arg) {
   while(1) {
 
-    string pendingProblem = popFrontPendingQueue();
-    if(!pendingProblem.empty()){
-      uint32_t iniTick = (uint32_t) xTaskGetTickCount();
-
-      stringstream ss(pendingProblem);
-      string token;
-      while(ss >> token) {
-        printf((token + "\n").c_str());
-      }
-
-      uint32_t endTick = (uint32_t) xTaskGetTickCount();
-
-      int durationMs = pdTICKS_TO_MS(endTick - iniTick);
-      printf("Duration: %d ms \n\n", durationMs);
-    }
+    uint16_t GPIO_PIN = *((uint16_t *) arg);
+    toggleLed(GPIO_PIN);
+//    string pendingProblem = popFrontPendingQueue();
+//    if(!pendingProblem.empty()){
+//      uint32_t iniTick = (uint32_t) xTaskGetTickCount();
+//
+//      stringstream ss(pendingProblem);
+//      string token;
+//      while(ss >> token) {
+//        printf((token + "\n").c_str());
+//      }
+//
+//      uint32_t endTick = (uint32_t) xTaskGetTickCount();
+//
+//      int durationMs = pdTICKS_TO_MS(endTick - iniTick);
+//      printf("Duration: %d ms \n\n", durationMs);
+//    }
 
 //    TaskStatus_t xTaskDetails;
 //    vTaskGetInfo( NULL, &xTaskDetails, pdTRUE, eInvalid );
 //    printf("TaskId: %d\n", (int) xTaskDetails.xTaskNumber);
     vTaskDelay(pdMS_TO_TICKS(100));
   }
+}
+
+void toggleLed(uint16_t GPIO_PIN) {
+
+#ifdef USE_MUTEX
+  if(xSemaphoreTake(gpioDMutex, ( TickType_t ) 1 ) == pdTRUE) {
+    HAL_GPIO_TogglePin(GPIOD, GPIO_PIN);
+    xSemaphoreGive(gpioDMutex);
+  }
+#else
+  pendingQueue.push_back(problem);
+#endif
 }
 
 void processInput(string input) {
@@ -151,7 +208,7 @@ void processInput(string input) {
         } else if (payload == "pop") { // TODO just for test
           sendOverUsb("Element: " + popFrontPendingQueue() + "\n");
         } else if (payload == "addtask") {
-          addWorkerTask();
+//          addWorkerTask();
         } else {// it is a thread update
           sendOverUsb("T: " + payload + "\n");
         }
@@ -180,24 +237,28 @@ uint8_t sendOverUsb(string msg) {
   return 0;
 }
 
-void addWorkerTask() {
+void addWorkerTask(uint8_t index) {
+
+
+  uint16_t * GPIO_PIN = &ledArray[index];
+  StackType_t * xStack =  (StackType_t *) &xStackArray[index];
+  StaticTask_t * xTaskBuffer = &xTaskBufferArray[index];
+
+
 
   uint8_t numberOfWorkerTasks = uxTaskGetNumberOfTasks() - 1;
-//  if(numberOfWorkerTasks < MAX_WORKER_TASKS) {
-    string taskName = "worker" + std::to_string(numberOfWorkerTasks);
-    xTaskCreate(
-      workerTask,
-      taskName.c_str(),
-      configMINIMAL_STACK_SIZE,
-      ( void * ) NULL,
-      TASK_PRIORITY,
-      NULL
-    );
-    printf("%s created\n", taskName.c_str());
-//  } else {
-//    printf("Cannot create worker No: %d\n", numberOfWorkerTasks);
-//  }
 
+  string taskName = "worker" + std::to_string(numberOfWorkerTasks);
+  xTaskCreateStatic(
+    workerTask,
+    taskName.c_str(),
+    configMINIMAL_STACK_SIZE,
+    (void *) GPIO_PIN,
+    TASK_PRIORITY,
+    xStack,
+    xTaskBuffer
+  );
+  printf("%s created\n", taskName.c_str());
 
 }
 
@@ -206,6 +267,7 @@ void pushPendingQueue(string problem) {
 #ifdef USE_MUTEX
   if(xSemaphoreTake(pendingQueueMutex, ( TickType_t ) 1 ) == pdTRUE) {
     pendingQueue.push_back(problem);
+//    myPendingQ.push(problem);
     xSemaphoreGive(pendingQueueMutex);
   }
 #else
@@ -234,6 +296,16 @@ void showPendingQueue() {
     for(string element: pendingQueue) {
       sendOverUsb(element + "\n");
     }
+//    string queues = "";
+//    Node * currentNode = myPendingQ.front;
+//    while(currentNode != NULL) {
+//      printf("iterating...\n");
+//      queues += currentNode->problem + "\n";
+//      currentNode = currentNode->next;
+//    }
+//    sendOverUsb(queues);
+
+
     xSemaphoreGive(pendingQueueMutex);
   }
 #else

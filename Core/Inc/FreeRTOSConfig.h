@@ -74,7 +74,7 @@
 #define configUSE_16_BIT_TICKS                   0
 #define configUSE_MUTEXES                        1
 #define configQUEUE_REGISTRY_SIZE                8
-#define configUSE_RECURSIVE_MUTEXES              0
+#define configUSE_RECURSIVE_MUTEXES              1
 #define configUSE_COUNTING_SEMAPHORES            1
 #define configUSE_PORT_OPTIMISED_TASK_SELECTION  0
 /* USER CODE BEGIN MESSAGE_BUFFER_LENGTH_TYPE */
@@ -155,6 +155,9 @@ header file. */
 #ifndef pdTICKS_TO_MS
   #define pdTICKS_TO_MS( xTicks ) ( ( ( uint32_t ) xTicks * 1000 ) / ( uint32_t ) configTICK_RATE_HZ )
 #endif
+
+#define INCLUDE_xTaskResumeFromISR              1
+#define INCLUDE_vTaskSuspend                    1
 /* USER CODE END 1 */
 
 /* Definitions that map the FreeRTOS port interrupt handlers to their CMSIS

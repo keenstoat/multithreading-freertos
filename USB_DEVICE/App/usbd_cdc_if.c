@@ -270,13 +270,10 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
 //  USBD_CDC_ReceivePacket(&hUsbDeviceFS);
 
   UserRxBufferFSPage += *Len;
-  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &UserRxBufferFS[UserRxBufferFSPage]);
-
   if(*Len < 64 || Buf[*Len - 1] == 10) {
     UserRxBufferFSPage = 0;
-    USBD_CDC_SetRxBuffer(&hUsbDeviceFS, UserRxBufferFS);
   }
-
+  USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &UserRxBufferFS[UserRxBufferFSPage]);
   USBD_CDC_ReceivePacket(&hUsbDeviceFS);
 
   return (USBD_OK);
