@@ -26,6 +26,7 @@ void serveUsbISRTask(void *);
 void bossTask(void *);
 void workerTask(void *);
 void toggleLEDs(void *);
+void toggleLED(uint16_t);
 
 void processInput(string) ;
 void sendOverUsb(string);
@@ -82,14 +83,14 @@ int user_main(void){
     &serveUsbISRTaskHandle
    );
 
-  xTaskCreate(
-    toggleLEDs,
-    "toggleLEDs",
-    configMINIMAL_STACK_SIZE,
-    ( void * ) NULL,
-    TASK_PRIORITY,
-    NULL
-   );
+//  xTaskCreate(
+//    toggleLEDs,
+//    "toggleLEDs",
+//    configMINIMAL_STACK_SIZE,
+//    ( void * ) NULL,
+//    TASK_PRIORITY,
+//    NULL
+//   );
 
 //  xTaskCreate(
 //      bossTask,
@@ -237,8 +238,11 @@ void workerTask(void * arg) {
 
   while(1) {
 
+    toggleLED(GPIO_PIN);
+    vTaskDelay(pdMS_TO_TICKS(200));
+
     string pendingProblem = popFrontPendingQueue();
-    if(!pendingProblem.empty()){
+    if(0){ //!pendingProblem.empty()
 
 //      *gpioPinPos = GPIO_PIN;
       uint32_t iniTs = pdTICKS_TO_MS((uint32_t) xTaskGetTickCount());
@@ -286,6 +290,14 @@ void toggleLEDs(void * arg) {
     HAL_GPIO_TogglePin(GPIOD, leds);
     vTaskDelay(pdMS_TO_TICKS(300));
   }
+}
+
+void toggleLED(uint16_t pin){
+  if(xSemaphoreTake(gpioDMutex, ( TickType_t ) 10 ) == pdTRUE) {
+    HAL_GPIO_TogglePin(GPIOD, pin);
+    xSemaphoreGive(gpioDMutex);
+  }
+
 }
 
 /*=============================== QUEUE HANDLE FUNCTIONS ===============================*/
