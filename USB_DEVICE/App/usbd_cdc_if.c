@@ -274,9 +274,9 @@ static int8_t CDC_Receive_FS(uint8_t* Buf, uint32_t *Len)
   UserRxBufferFSPage += *Len;
   if(*Len < 64 || Buf[*Len - 1] == 10) {
     UserRxBufferFSPage = 0;
-    printf("BUFF: ");
-    printf((char *) UserRxBufferFS);
-    printf("\n");
+//    printf("BUFF: ");
+//    printf((char *) UserRxBufferFS);
+//    printf("\n");
     xSemaphoreGiveFromISR(usbBinSemaphore, &xHigherPriorityTaskWoken);
   }
   USBD_CDC_SetRxBuffer(&hUsbDeviceFS, &UserRxBufferFS[UserRxBufferFSPage]);
