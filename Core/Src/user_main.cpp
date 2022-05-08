@@ -60,8 +60,11 @@ uint16_t ledArray[WORKER_TASKS];
 StaticSemaphore_t gpioDMutexBuffer;
 SemaphoreHandle_t gpioDMutex;
 
-list<string> solvedQueue;
-list<string> pendingQueue;
+static list<string> solvedQueue;
+static list<string> pendingQueue;
+
+//string pendingQueue[10];
+//string solvedQueue[10];
 
 
 
@@ -126,16 +129,27 @@ void serveUsbISRTask(void * arg) {
 //  const TickType_t xBlockTime = pdMS_TO_TICKS(500);
   while(1) {
 
-    printf("Serving USB ISR...%d\n", count++);
-    sendOverUsb("Serving USB ISR..." + std::to_string(count) + "\n");
+//    printf("Serving USB ISR...%d\n", count++);
+//    sendOverUsb("Serving USB ISR..." + std::to_string(count) + "\n");
 
-    if(xSemaphoreTake(usbBinSemaphore, pdMS_TO_TICKS(10) ) == pdTRUE ) {
+    if(xSemaphoreTake(usbBinSemaphore, (TickType_t) 10 ) == pdTRUE ) {
       sendOverUsb("There is USB data ready..." + std::to_string(count) + "\n");
-//      printf("Serving USB ISR...%d\n", count++);
-//      memcpy(inputBuffer, UserRxBufferFS, APP_RX_DATA_SIZE);
-//      printf(inputBuffer);
-//      memset(UserRxBufferFS, '\0', APP_RX_DATA_SIZE);
-//      printf("\n\n");
+
+      string input((char *) UserRxBufferFS);
+      if(!input.empty()) {
+
+        string response = "Message received: " +
+            std::to_string(input.length()) + " Bytes\n" +
+            input + "\n";
+        sendOverUsb(response);
+//        processInput(input);
+        sendOverUsb("Message processed\n\n");
+
+        input = "";
+        memset(UserRxBufferFS, '\0', APP_RX_DATA_SIZE);
+      }
+
+
     }
     vTaskDelay(pdMS_TO_TICKS(300));
   }
@@ -239,7 +253,12 @@ void workerTask(void * arg) {
   while(1) {
 
     toggleLED(GPIO_PIN);
-    vTaskDelay(pdMS_TO_TICKS(200));
+    TickType_t tt = 50;
+    if(GPIO_PIN == LED_GREEN_Pin) tt = 100;
+    else if(GPIO_PIN == LED_ORANGE_Pin) tt = 180;
+    else if(GPIO_PIN == LED_RED_Pin) tt = 250;
+    else if(GPIO_PIN == LED_BLUE_Pin) tt = 330;
+    vTaskDelay(pdMS_TO_TICKS(tt));
 
     string pendingProblem = popFrontPendingQueue();
     if(0){ //!pendingProblem.empty()
