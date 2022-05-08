@@ -158,6 +158,7 @@ header file. */
 
 #define INCLUDE_xTaskResumeFromISR              1
 #define INCLUDE_vTaskSuspend                    1
+#define configUSE_TASK_NOTIFICATIONS            1
 /* USER CODE END 1 */
 
 /* Definitions that map the FreeRTOS port interrupt handlers to their CMSIS

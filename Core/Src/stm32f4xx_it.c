@@ -24,8 +24,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "FreeRTOS.h"
-#include "task.h"
-#include "semphr.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -63,8 +62,8 @@ extern PCD_HandleTypeDef hpcd_USB_OTG_FS;
 extern TIM_HandleTypeDef htim6;
 
 /* USER CODE BEGIN EV */
-extern TaskHandle_t serveUsbISRTaskHandle;
-int count = 0;
+//extern TaskHandle_t serveUsbISRTaskHandle;
+extern BaseType_t xHigherPriorityTaskWoken;
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -185,14 +184,12 @@ void TIM6_DAC_IRQHandler(void)
 void OTG_FS_IRQHandler(void)
 {
   /* USER CODE BEGIN OTG_FS_IRQn 0 */
-
+  xHigherPriorityTaskWoken = pdFALSE;
   /* USER CODE END OTG_FS_IRQn 0 */
   HAL_PCD_IRQHandler(&hpcd_USB_OTG_FS);
-  printf("OTG_FS_IRQHandler %d\n", count++);
+
   /* USER CODE BEGIN OTG_FS_IRQn 1 */
-  // Resume the suspended task.
-  BaseType_t xYieldRequired = xTaskResumeFromISR(serveUsbISRTaskHandle);
-  portYIELD_FROM_ISR( xYieldRequired );
+  portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
   /* USER CODE END OTG_FS_IRQn 1 */
 }
 
